@@ -12,12 +12,14 @@ from .Event import Event, StatusEvent, GameEvent, ProjectedEvent, ExternalEvent,
 from .EventModels import FSSSignalDiscoveredEvent, LocationEvent
 from .EventManager import EventManager, Projection
 from .Logger import log
-from .EDFuelCalc import RATING_BY_CLASSNUM , FSD_OVERCHARGE_STATS , FSD_MKii ,FSD_OVERCHARGE_V2PRE_STATS, FSD_STATS ,FSD_GUARDIAN_BOOSTER
+from .EDFuelCalc import RATING_BY_CLASSNUM, FSD_OVERCHARGE_STATS, FSD_MKii, FSD_OVERCHARGE_V2PRE_STATS, FSD_STATS, \
+    FSD_GUARDIAN_BOOSTER
 from .StatusParser import parse_status_flags, parse_status_json, Status
 from .SystemDatabase import SystemDatabase
 
 # Type alias for projected states dictionary
 ProjectedStates = dict[str, BaseModel]
+
 
 def get_state_dict(projected_states: ProjectedStates, key: str, default: dict | None = None) -> dict:
     """Helper to get a projection state as a dict for backward-compatible access patterns.
@@ -41,9 +43,11 @@ def get_state_dict(projected_states: ProjectedStates, key: str, default: dict | 
         return state.model_dump()
     return state if isinstance(state, dict) else default
 
+
 # Pydantic model for LatestEvent projection - stores arbitrary game event data
 class LatestEventState(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
+
 
 def latest_event_projection_factory(projectionName: str, gameEvent: str):
     class LatestEvent(Projection[LatestEventState]):
@@ -291,7 +295,7 @@ class CargoState(BaseModel):
 @final
 class Cargo(Projection[CargoState]):
     StateModel = CargoState
-    
+
     @override
     def process(self, event: Event) -> None:
         # Process Cargo event
@@ -312,7 +316,7 @@ class Cargo(Projection[CargoState]):
         # Get cargo capacity from Loadout event
         if isinstance(event, GameEvent) and event.content.get('event') == 'Loadout':
             self.state.Capacity = int(event.content.get('CargoCapacity', 0))
-            
+
         # Update from Status event
         if isinstance(event, StatusEvent) and event.status.get('event') == 'Status':
             if 'Cargo' in event.status:
@@ -324,7 +328,8 @@ class LocationState(BaseModel):
     StarSystem: str = Field(default='Unknown', description="Current star system name")
     SystemAddress: Optional[int] = Field(default=None, description="Unique system address for the current star system")
     Star: Optional[str] = Field(default=None, description="Current star body if near one")
-    StarPos: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0], description="Position in galactic coordinates [x, y, z]")
+    StarPos: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0],
+                                 description="Position in galactic coordinates [x, y, z]")
     Planet: Optional[str] = Field(default=None, description="Current planet body if near one")
     PlanetaryRing: Optional[str] = Field(default=None, description="Current planetary ring if near one")
     StellarRing: Optional[str] = Field(default=None, description="Current stellar ring if near one")
@@ -338,7 +343,7 @@ class LocationState(BaseModel):
 @final
 class Location(Projection[LocationState]):
     StateModel = LocationState
-    
+
     @override
     def process(self, event: Event) -> None:
         if isinstance(event, GameEvent) and event.content.get('event') == 'Location':
@@ -347,7 +352,7 @@ class Location(Projection[LocationState]):
             body = event.content.get('Body', 'Unknown')
             station = event.content.get('StationName')
             docked = event.content.get('Docked', False)
-            star_pos = event.content.get('StarPos', [0,0,0])
+            star_pos = event.content.get('StarPos', [0, 0, 0])
 
             # Reset state and set new values
             self.state = LocationState(StarSystem=star_system, StarPos=star_pos, SystemAddress=self.state.SystemAddress)
@@ -361,52 +366,55 @@ class Location(Projection[LocationState]):
 
         if isinstance(event, GameEvent) and event.content.get('event') == 'SupercruiseEntry':
             star_system = event.content.get('StarSystem', 'Unknown')
-            self.state = LocationState(StarSystem=star_system, StarPos=self.state.StarPos, SystemAddress=self.state.SystemAddress)
-                
+            self.state = LocationState(StarSystem=star_system, StarPos=self.state.StarPos,
+                                       SystemAddress=self.state.SystemAddress)
+
         if isinstance(event, GameEvent) and event.content.get('event') == 'SupercruiseExit':
             star_system = event.content.get('StarSystem', 'Unknown')
             body_type = event.content.get('BodyType', 'Null')
             body = event.content.get('Body', 'Unknown')
 
-            self.state = LocationState(StarSystem=star_system, StarPos=self.state.StarPos, SystemAddress=self.state.SystemAddress)
+            self.state = LocationState(StarSystem=star_system, StarPos=self.state.StarPos,
+                                       SystemAddress=self.state.SystemAddress)
             if body_type and body_type != 'Null':
                 setattr(self.state, body_type, body)
-        
+
         if isinstance(event, GameEvent) and event.content.get('event') == 'FSDJump':
             star_system = event.content.get('StarSystem', 'Unknown')
             system_address = event.content.get('SystemAddress')
-            star_pos = event.content.get('StarPos', [0,0,0])
+            star_pos = event.content.get('StarPos', [0, 0, 0])
             body_type = event.content.get('BodyType', 'Null')
             body = event.content.get('Body', 'Unknown')
             self.state = LocationState(StarSystem=star_system, StarPos=star_pos, SystemAddress=system_address)
-            
+
             if body_type and body_type != 'Null':
                 setattr(self.state, body_type, body)
 
         if isinstance(event, GameEvent) and event.content.get('event') == 'Docked':
             self.state.Docked = True
             self.state.Station = event.content.get('StationName', 'Unknown')
-        
+
         if isinstance(event, GameEvent) and event.content.get('event') == 'Undocked':
             self.state.Docked = None
-                
+
         if isinstance(event, GameEvent) and event.content.get('event') == 'Touchdown':
             self.state.Landed = True
             self.state.NearestDestination = event.content.get('NearestDestination', 'Unknown')
-        
+
         if isinstance(event, GameEvent) and event.content.get('event') == 'Liftoff':
             self.state.Landed = None
-            
+
         if isinstance(event, GameEvent) and event.content.get('event') == 'ApproachSettlement':
             self.state.Station = event.content.get('Name', 'Unknown')
             self.state.Planet = event.content.get('BodyName', 'Unknown')
-            
+
         if isinstance(event, GameEvent) and event.content.get('event') == 'ApproachBody':
             self.state.Station = event.content.get('Name', 'Unknown')
             self.state.Planet = event.content.get('BodyName', 'Unknown')
-            
+
         if isinstance(event, GameEvent) and event.content.get('event') == 'LeaveBody':
-            self.state = LocationState(StarSystem=self.state.StarSystem, StarPos=self.state.StarPos, SystemAddress=self.state.SystemAddress)
+            self.state = LocationState(StarSystem=self.state.StarSystem, StarPos=self.state.StarPos,
+                                       SystemAddress=self.state.SystemAddress)
 
 
 class MissionState(BaseModel):
@@ -445,13 +453,14 @@ class UnknownMissionState(BaseModel):
 class MissionsStateModel(BaseModel):
     """Current mission state of the commander."""
     Active: list[MissionState] = Field(default_factory=list, description="List of active missions with full details")
-    Unknown: Optional[list[UnknownMissionState]] = Field(default=None, description="Missions loaded from save with limited details")
+    Unknown: Optional[list[UnknownMissionState]] = Field(default=None,
+                                                         description="Missions loaded from save with limited details")
 
 
 @final
 class Missions(Projection[MissionsStateModel]):
     StateModel = MissionsStateModel
-    
+
     @override
     def process(self, event: Event) -> None:
         if isinstance(event, GameEvent) and event.content.get('event') == 'Missions':
@@ -464,7 +473,7 @@ class Missions(Projection[MissionsStateModel]):
                 if m["MissionID"] not in known_ids
             ]
             self.state.Unknown = unknown_missions if unknown_missions else None
-        
+
         if isinstance(event, GameEvent) and event.content.get('event') == 'MissionAccepted':
             mission = MissionState(
                 Faction=event.content.get('Faction', 'Unknown'),
@@ -490,7 +499,7 @@ class Missions(Projection[MissionsStateModel]):
                 PassengerType=event.content.get('PassengerType'),
             )
             self.state.Active.append(mission)
-        
+
         if isinstance(event, GameEvent) and event.content.get('event') == 'MissionCompleted':
             mission_id = event.content.get('MissionID', 0)
             self.state.Active = [mission for mission in self.state.Active if mission.MissionID != mission_id]
@@ -498,13 +507,15 @@ class Missions(Projection[MissionsStateModel]):
                 self.state.Unknown = [mission for mission in self.state.Unknown if mission.MissionID != mission_id]
                 if not self.state.Unknown:
                     self.state.Unknown = None
-        
+
         if isinstance(event, GameEvent) and event.content.get('event') == 'MissionRedirected':
-            existing_mission = next((mission for mission in self.state.Active if mission.MissionID == event.content.get('MissionID', 0)), None)
+            existing_mission = next(
+                (mission for mission in self.state.Active if mission.MissionID == event.content.get('MissionID', 0)),
+                None)
             new_destination_system = event.content.get('NewDestinationSystem', None)
             new_destination_station = event.content.get('NewDestinationStation', None)
             new_destination_settlement = event.content.get('NewDestinationSettlement', None)
-            
+
             if existing_mission:
                 if new_destination_system:
                     existing_mission.DestinationSystem = new_destination_system
@@ -514,10 +525,11 @@ class Missions(Projection[MissionsStateModel]):
                         existing_mission.Name += " (Collect Reward)"
                 if new_destination_settlement:
                     existing_mission.DestinationSettlement = new_destination_settlement
-            
-                self.state.Active = [mission for mission in self.state.Active if mission.MissionID != event.content.get('MissionID', 0)]
+
+                self.state.Active = [mission for mission in self.state.Active if
+                                     mission.MissionID != event.content.get('MissionID', 0)]
                 self.state.Active.append(existing_mission)
-                
+
         # If we Undock with a new mission, we probably accepted it at the station we undocked from
         if isinstance(event, GameEvent) and event.content.get('event') == 'Undocked':
             for mission in self.state.Active:
@@ -528,7 +540,7 @@ class Missions(Projection[MissionsStateModel]):
             for mission in self.state.Active:
                 if mission.OriginStation is None:
                     mission.OriginStation = 'Unknown'
-        
+
         if isinstance(event, GameEvent) and event.content.get('event') == 'MissionAbandoned':
             mission_id = event.content.get('MissionID', 0)
             self.state.Active = [mission for mission in self.state.Active if mission.MissionID != mission_id]
@@ -536,7 +548,7 @@ class Missions(Projection[MissionsStateModel]):
                 self.state.Unknown = [mission for mission in self.state.Unknown if mission.MissionID != mission_id]
                 if not self.state.Unknown:
                     self.state.Unknown = None
-        
+
         if isinstance(event, GameEvent) and event.content.get('event') == 'MissionFailed':
             mission_id = event.content.get('MissionID', 0)
             self.state.Active = [mission for mission in self.state.Active if mission.MissionID != mission_id]
@@ -553,7 +565,8 @@ class EngineerState(BaseModel):
     """Progress status with an engineer."""
     Engineer: str = Field(description="Engineer name")
     EngineerID: int = Field(description="Unique engineer identifier")
-    Progress: Optional[ENGINEER_PROGRESS_LITERAL] = Field(default=None, description="Relationship status: Known/Invited/Acquainted/Unlocked/Barred")
+    Progress: Optional[ENGINEER_PROGRESS_LITERAL] = Field(default=None,
+                                                          description="Relationship status: Known/Invited/Acquainted/Unlocked/Barred")
     Rank: Optional[int] = Field(default=None, description="Current rank with this engineer (1-5)")
     RankProgress: Optional[int] = Field(default=None, description="Progress percentage to next rank")
 
@@ -568,7 +581,7 @@ class EngineerProgressStateModel(BaseModel):
 @final
 class EngineerProgress(Projection[EngineerProgressStateModel]):
     StateModel = EngineerProgressStateModel
-    
+
     @override
     def process(self, event: Event) -> None:
         if isinstance(event, GameEvent) and event.content.get('event') == 'EngineerProgress':
@@ -589,7 +602,7 @@ class EngineerProgress(Projection[EngineerProgressStateModel]):
                     timestamp=event.content.get('timestamp', '1970-01-01T00:00:00Z'),
                     Engineers=engineers,
                 )
-            
+
             # Handle update form - single engineer update
             elif 'Engineer' in event.content and 'EngineerID' in event.content:
                 engineer_id = event.content.get('EngineerID', 0)
@@ -600,7 +613,7 @@ class EngineerProgress(Projection[EngineerProgressStateModel]):
                     if engineer.EngineerID == engineer_id:
                         existing_engineer = self.state.Engineers[i]
                         break
-                
+
                 if existing_engineer:
                     # Update existing engineer
                     if 'Engineer' in event.content:
@@ -690,81 +703,81 @@ class CommunityGoal(Projection[CommunityGoalStateModel]):
                 timestamp=event.content.get('timestamp'),
                 CurrentGoals=goals,
             )
-        
+
         elif isinstance(event, GameEvent) and event.content.get('event') == 'LoadGame':
             # Check for expired goals and remove them
             from datetime import datetime
             current_time = event.timestamp
             current_dt = datetime.fromisoformat(current_time.replace('Z', '+00:00'))
-            
+
             # Filter out expired goals
             active_goals = []
             current_goals = self.state.CurrentGoals or []
             for goal in current_goals:
                 expiry_time = goal.Expiry or "1970-01-01T00:00:00Z"
                 expiry_dt = datetime.fromisoformat(expiry_time.replace('Z', '+00:00'))
-                
+
                 # Keep goal if it hasn't expired yet
                 if current_dt < expiry_dt:
                     active_goals.append(goal)
-            
+
             # Update state with only non-expired goals
             self.state.CurrentGoals = active_goals if active_goals else None
 
-ship_sizes: dict[str, Literal['S', 'M', 'L', 'Unknown']] = {
-    'adder':                         'S',
-    'anaconda':                      'L',
-    'asp':                           'M',
-    'asp_scout':                     'M',
-    'belugaliner':                   'L',
-    'cobramkiii':                    'S',
-    'cobramkiv':                     'S',
-    'clipper':                       'Unknown',
-    'cutter':                        'L',
-    'corsair':                       'M',
-    'diamondback':                   'S',
-    'diamondbackxl':                 'S',
-    'dolphin':                       'S',
-    'eagle':                         'S',
-    'empire_courier':                'S',
-    'empire_eagle':                  'S',
-    'empire_fighter':                'Unknown',
-    'empire_trader':                 'L',
-    'explorer_nx':                   'L',
-    'federation_corvette':           'L',
-    'federation_dropship':           'M',
-    'federation_dropship_mkii':      'M',
-    'federation_gunship':            'M',
-    'federation_fighter':            'Unknown',
-    'ferdelance':                    'M',
-    'hauler':                        'S',
-    'independant_trader':            'M',
-    'independent_fighter':           'Unknown',
-    'krait_mkii':                    'M',
-    'krait_light':                   'M',
-    'mamba':                         'M',
-    'mandalay':                      'M',
-    'orca':                          'L',
-    'python':                        'M',
-    'python_nx':                     'M',
-    'panthermkii':                   'L',
-    'scout':                         'Unknown',
-    'sidewinder':                    'S',
-    'testbuggy':                     'Unknown',
-    'type6':                         'M',
-    'type7':                         'L',
-    'type8':                         'L',
-    'type9':                         'L',
-    'type9_military':                'L',
-    'typex':                         'M',
-    'typex_2':                       'M',
-    'typex_3':                       'M',
-    'type11':                        'M',
-    'viper':                         'S',
-    'viper_mkiv':                    'S',
-    'vulture':                       'S',
-}
 
+ship_sizes: dict[str, Literal['S', 'M', 'L', 'Unknown']] = {
+    'adder': 'S',
+    'anaconda': 'L',
+    'asp': 'M',
+    'asp_scout': 'M',
+    'belugaliner': 'L',
+    'cobramkiii': 'S',
+    'cobramkiv': 'S',
+    'clipper': 'Unknown',
+    'cutter': 'L',
+    'corsair': 'M',
+    'diamondback': 'S',
+    'diamondbackxl': 'S',
+    'dolphin': 'S',
+    'eagle': 'S',
+    'empire_courier': 'S',
+    'empire_eagle': 'S',
+    'empire_fighter': 'Unknown',
+    'empire_trader': 'L',
+    'explorer_nx': 'L',
+    'federation_corvette': 'L',
+    'federation_dropship': 'M',
+    'federation_dropship_mkii': 'M',
+    'federation_gunship': 'M',
+    'federation_fighter': 'Unknown',
+    'ferdelance': 'M',
+    'hauler': 'S',
+    'independant_trader': 'M',
+    'independent_fighter': 'Unknown',
+    'krait_mkii': 'M',
+    'krait_light': 'M',
+    'mamba': 'M',
+    'mandalay': 'M',
+    'orca': 'L',
+    'python': 'M',
+    'python_nx': 'M',
+    'panthermkii': 'L',
+    'scout': 'Unknown',
+    'sidewinder': 'S',
+    'testbuggy': 'Unknown',
+    'type6': 'M',
+    'type7': 'L',
+    'type8': 'L',
+    'type9': 'L',
+    'type9_military': 'L',
+    'typex': 'M',
+    'typex_2': 'M',
+    'typex_3': 'M',
+    'type11': 'M',
+    'viper': 'S',
+    'viper_mkiv': 'S',
+    'vulture': 'S',
+}
 
 FIGHTER_STATUS_LITERAL = Literal['Ready', 'Launched', 'BeingRebuilt', 'Abandoned']
 
@@ -814,21 +827,20 @@ class ShipInfoStateModel(BaseModel):
 @final
 class ShipInfo(Projection[ShipInfoStateModel]):
     StateModel = ShipInfoStateModel
-    
+
     @override
     def process(self, event: Event) -> list[ProjectedEvent]:
         projected_events: list[ProjectedEvent] = []
-     
+
         if isinstance(event, StatusEvent) and event.status.get('event') == 'Status':
             status: Status = event.status  # pyright: ignore[reportAssignmentType]
             if 'Cargo' in event.status:
                 self.state.Cargo = event.status.get('Cargo') or 0
-                
+
             if 'Fuel' in status and status['Fuel']:
                 self.state.FuelMain = status['Fuel'].get('FuelMain') or 0
                 self.state.FuelReservoir = status['Fuel'].get('FuelReservoir') or 0
-                
-        
+
         if isinstance(event, GameEvent) and event.content.get('event') == 'Loadout':
             if 'ShipName' in event.content:
                 self.state.Name = event.content.get('ShipName') or 'Unknown'
@@ -890,19 +902,20 @@ class ShipInfo(Projection[ShipInfoStateModel]):
                 else:
                     self.state.Fighters = []
 
-                #Check for FSD Engine
+                # Check for FSD Engine
                 for module in event.content.get("Modules", []):
-                    module_slot = module.get("Slot", "") 
+                    module_slot = module.get("Slot", "")
                     if module_slot != "FrameShiftDrive":
                         continue
-                    
+
                     module_item = module.get('Item')
                     over = "hyperdrive_overcharge" in module_item
                     mkii = "overchargebooster_mkii" in module_item
                     module_size_match = re.search(r"size(\d)", module_item)
                     module_class_match = re.search(r"class(\d)", module_item)
                     module_size = int(module_size_match.group(1)) if module_size_match else None
-                    module_rating = RATING_BY_CLASSNUM.get(int(module_class_match.group(1))) if module_class_match else None
+                    module_rating = RATING_BY_CLASSNUM.get(
+                        int(module_class_match.group(1))) if module_class_match else None
 
                     engineering_optimal_mass_override = None
                     engineering_max_fuel_override = None
@@ -910,7 +923,7 @@ class ShipInfo(Projection[ShipInfoStateModel]):
                     for modifier in module.get("Engineering", {}).get("Modifiers", []) or []:
                         if modifier.get("Label") in ("FSDOptimalMass", "fsdoptimalmass"):
                             engineering_optimal_mass_override = float(modifier.get("Value"))
-                            
+
                         if modifier.get("Label") in ("MaxFuelPerJump", "maxfuelperjump"):
                             engineering_max_fuel_override = float(modifier.get("Value"))
                     if mkii == True:
@@ -919,29 +932,30 @@ class ShipInfo(Projection[ShipInfoStateModel]):
                         all_module_stats = FSD_OVERCHARGE_STATS if over else FSD_STATS
 
                     module_stat: dict = all_module_stats.get((module_size, module_rating))
-                    self.state.DriveOptimalMass = engineering_optimal_mass_override if engineering_optimal_mass_override is not None else module_stat.get('opt_mass', 0.00)
-                    self.state.DriveMaxFuel = engineering_max_fuel_override if engineering_max_fuel_override is not None else module_stat.get('max_fuel', 0.00)
+                    self.state.DriveOptimalMass = engineering_optimal_mass_override if engineering_optimal_mass_override is not None else module_stat.get(
+                        'opt_mass', 0.00)
+                    self.state.DriveMaxFuel = engineering_max_fuel_override if engineering_max_fuel_override is not None else module_stat.get(
+                        'max_fuel', 0.00)
                     self.state.DriveLinearConst = module_stat.get('linear_const', 0.0)
                     self.state.DrivePowerConst = module_stat.get('power_const', 0.0)
 
-                    log('debug','mkii?: ',mkii,' Fsd type again :', module_item)
+                    log('debug', 'mkii?: ', mkii, ' Fsd type again :', module_item)
 
                 # Check for GuardianfsdBooster
                 self.state.GuardianfsdBooster = 0
                 for module in event.content.get("Modules", []):
                     module_item = module.get('Item')
-                    if "int_guardianfsdbooster" in module_item.lower():    
+                    if "int_guardianfsdbooster" in module_item.lower():
                         module_size_match = re.search(r"size(\d+)", module_item)
                         module_size = int(module_size_match.group(1))
-                        guardian_booster_stats = FSD_GUARDIAN_BOOSTER.get((module_size,"H"))
-                        
+                        guardian_booster_stats = FSD_GUARDIAN_BOOSTER.get((module_size, "H"))
+
                         self.state.GuardianfsdBooster = guardian_booster_stats.get('jump_boost', 0.0)
-                          
-        
+
         if isinstance(event, GameEvent) and event.content.get('event') == 'JetConeBoost':
             fsd_star_boost = event.content.get('BoostValue', 1)
             self.state.JetConeBoost = fsd_star_boost
-        
+
         if isinstance(event, GameEvent) and event.content.get('event') == 'Synthesis':
             fsd_inject_boost_name = event.content.get('Name', "")
 
@@ -954,17 +968,16 @@ class ShipInfo(Projection[ShipInfoStateModel]):
             elif fsd_inject_boost_name == "FSD Premium":
                 self.state.FSDSynthesis = 1
 
-        if isinstance(event,GameEvent) and event.content.get('event') == 'FSDJump':
+        if isinstance(event, GameEvent) and event.content.get('event') == 'FSDJump':
             self.state.JetConeBoost = 1
             self.state.FSDSynthesis = 0
 
-        
         if isinstance(event, GameEvent) and event.content.get('event') == 'Cargo':
             self.state.Cargo = event.content.get('Count') or 0
-            if event.content.get('Vessel') == 'Ship': 
+            if event.content.get('Vessel') == 'Ship':
                 self.state.ShipCargo = event.content.get('Count') or 0
 
-        if isinstance(event, GameEvent) and event.content.get('event') in ['RefuelAll','RepairAll','BuyAmmo']:
+        if isinstance(event, GameEvent) and event.content.get('event') in ['RefuelAll', 'RepairAll', 'BuyAmmo']:
             if self.state.hasLimpets and self.state.Cargo < self.state.CargoCapacity:
                 projected_events.append(ProjectedEvent(content={"event": "RememberLimpets"}))
 
@@ -990,11 +1003,11 @@ class ShipInfo(Projection[ShipInfoStateModel]):
         if isinstance(event, GameEvent) and event.content.get('event') == 'LaunchFighter':
             fighter_id = event.content.get('ID')
             player_controlled = event.content.get('PlayerControlled', False)
-            
+
             if fighter_id is not None:
                 # Determine pilot based on PlayerControlled flag
                 pilot = "Commander" if player_controlled else "NPC Crew"
-                
+
                 # Find existing fighter with this ID or a ready fighter without ID
                 fighter_found = False
                 for fighter in self.state.Fighters:
@@ -1004,7 +1017,7 @@ class ShipInfo(Projection[ShipInfoStateModel]):
                         fighter.Pilot = pilot
                         fighter_found = True
                         break
-                
+
                 if not fighter_found:
                     # Find a ready fighter without ID
                     for fighter in self.state.Fighters:
@@ -1016,7 +1029,7 @@ class ShipInfo(Projection[ShipInfoStateModel]):
 
         if isinstance(event, GameEvent) and event.content.get('event') == 'DockFighter':
             fighter_id = event.content.get('ID')
-            
+
             # Find fighter by ID and set to ready, clear ID
             for fighter in self.state.Fighters:
                 if fighter.ID == fighter_id:
@@ -1027,12 +1040,12 @@ class ShipInfo(Projection[ShipInfoStateModel]):
 
         if isinstance(event, GameEvent) and event.content.get('event') == 'FighterDestroyed':
             fighter_id = event.content.get('ID')
-            
+
             # Calculate rebuild completion time (80 seconds from now)
             current_time = datetime.fromisoformat(event.timestamp.replace('Z', '+00:00'))
             rebuild_time = current_time + timedelta(seconds=90)
             rebuild_timestamp = rebuild_time.isoformat().replace('+00:00', 'Z')
-            
+
             # Find fighter by ID and set to being rebuilt
             for fighter in self.state.Fighters:
                 if fighter.ID == fighter_id:
@@ -1043,7 +1056,7 @@ class ShipInfo(Projection[ShipInfoStateModel]):
 
         if isinstance(event, GameEvent) and event.content.get('event') == 'FighterRebuilt':
             fighter_id = event.content.get('ID')
-            
+
             # Find fighter by ID and set to ready, clear ID
             for fighter in self.state.Fighters:
                 if fighter.ID == fighter_id:
@@ -1055,7 +1068,7 @@ class ShipInfo(Projection[ShipInfoStateModel]):
 
         if isinstance(event, GameEvent) and event.content.get('event') == 'VehicleSwitch':
             vehicle_to = event.content.get('To', '')
-            
+
             if vehicle_to == 'Mothership':
                 # Commander switched back to mothership, fighter becomes abandoned
                 for fighter in self.state.Fighters:
@@ -1063,7 +1076,7 @@ class ShipInfo(Projection[ShipInfoStateModel]):
                         fighter.Status = 'Abandoned'
                         fighter.Pilot = 'No pilot'
                         break
-            
+
             elif vehicle_to == 'Fighter':
                 # Commander switched to fighter, set fighter back to launched
                 for fighter in self.state.Fighters:
@@ -1074,53 +1087,53 @@ class ShipInfo(Projection[ShipInfoStateModel]):
 
         if self.state.Type != 'Unknown':
             self.state.LandingPadSize = ship_sizes.get(self.state.Type, 'Unknown')
-            
+
         # Recalculate jump ranges on weight, module or modifier changes
         if isinstance(event, StatusEvent) and event.status.get('event') == 'Status':
             try:
-                min_jr,cur_jr,max_jr = self.calculate_jump_range()
+                min_jr, cur_jr, max_jr = self.calculate_jump_range()
                 self.state.MinimumJumpRange = min_jr
                 self.state.CurrentJumpRange = cur_jr
                 self.state.MaximumJumpRange = max_jr
             except Exception as e:
                 log('error', 'Error calculating jump ranges:', e, traceback.format_exc())
-        
+
         return projected_events
-    
+
     def calculate_jump_range(self) -> tuple[float, float, float]:
 
-        unladen_mass   = self.state.UnladenMass
+        unladen_mass = self.state.UnladenMass
         cargo_capacity = self.state.CargoCapacity
-        fuel_capacity  = self.state.FuelMainCapacity
-        maximum_jump_range     = self.state.ReportedMaximumJumpRange
-        drive_power_const   = self.state.DrivePowerConst
+        fuel_capacity = self.state.FuelMainCapacity
+        maximum_jump_range = self.state.ReportedMaximumJumpRange
+        drive_power_const = self.state.DrivePowerConst
         drive_optimal_mass = self.state.DriveOptimalMass
-        drive_linear_const  = self.state.DriveLinearConst
-        drive_max_fuel  = self.state.DriveMaxFuel
+        drive_linear_const = self.state.DriveLinearConst
+        drive_max_fuel = self.state.DriveMaxFuel
         fsd_star_boost = self.state.JetConeBoost
         fsd_boost = self.state.GuardianfsdBooster
-        fsd_inject = self.state.FSDSynthesis # +inject juice 25% , 50% ,100% but cant be with star_boost
+        fsd_inject = self.state.FSDSynthesis  # +inject juice 25% , 50% ,100% but cant be with star_boost
 
         if not (unladen_mass > 0 and fuel_capacity > 0 and maximum_jump_range > 0 and drive_max_fuel):
             return 0, 0, 0
 
         current_cargo = self.state.ShipCargo
-        current_fuel  = self.state.FuelMain
+        current_fuel = self.state.FuelMain
         current_fuel_reservoir = self.state.FuelReservoir
 
-        minimal_mass = unladen_mass + drive_max_fuel  #max jump with just right anmount
-        current_mass = unladen_mass + current_cargo + current_fuel + current_fuel_reservoir  #current mass
+        minimal_mass = unladen_mass + drive_max_fuel  # max jump with just right anmount
+        current_mass = unladen_mass + current_cargo + current_fuel + current_fuel_reservoir  # current mass
         maximal_mass = unladen_mass + cargo_capacity + fuel_capacity  # minimal jump with min mass
-        #log('info', 'minimal_mass', minimal_mass)
-        #log('info', 'current_mass', current_mass)
-        #log('info', 'maximal_mass', maximal_mass)
-        
-        base = lambda M, F: (drive_optimal_mass / M) * ((10**3 * F) / drive_linear_const )**(1/drive_power_const)
-        # adding stuff here for more future fsd boost stuff 
-        min_ly = (base(maximal_mass, drive_max_fuel) + fsd_boost) * (fsd_star_boost +fsd_inject)
-        cur_ly = (base(current_mass, min(drive_max_fuel,current_fuel)) + fsd_boost) * (fsd_star_boost +fsd_inject)
-        max_ly = (base(minimal_mass, drive_max_fuel) + fsd_boost) * (fsd_star_boost +fsd_inject)
-        
+        # log('info', 'minimal_mass', minimal_mass)
+        # log('info', 'current_mass', current_mass)
+        # log('info', 'maximal_mass', maximal_mass)
+
+        base = lambda M, F: (drive_optimal_mass / M) * ((10 ** 3 * F) / drive_linear_const) ** (1 / drive_power_const)
+        # adding stuff here for more future fsd boost stuff
+        min_ly = (base(maximal_mass, drive_max_fuel) + fsd_boost) * (fsd_star_boost + fsd_inject)
+        cur_ly = (base(current_mass, min(drive_max_fuel, current_fuel)) + fsd_boost) * (fsd_star_boost + fsd_inject)
+        max_ly = (base(minimal_mass, drive_max_fuel) + fsd_boost) * (fsd_star_boost + fsd_inject)
+
         return min_ly, cur_ly, max_ly
 
 
@@ -1198,6 +1211,7 @@ class NavRouteItem(BaseModel):
     StarSystem: str = Field(description="Star system name")
     Scoopable: bool = Field(description="Whether the star is fuel-scoopable (K/G/B/F/O/A/M class)")
 
+
 class StoredModuleItem(BaseModel):
     """A module stored at a station or in transit."""
     Name: str = Field(description="Module internal name")
@@ -1224,6 +1238,7 @@ class FetchRemoteModuleItem(BaseModel):
     StorageSlot: int = Field(description="Storage slot identifier")
     TransferCompleteTime: str = Field(description="ISO timestamp when transfer completes")
     TransferCost: int = Field(description="Transfer cost in credits")
+
 
 class StoredModulesStateModel(BaseModel):
     """Current stored modules status."""
@@ -1294,7 +1309,8 @@ class StoredModules(Projection[StoredModulesStateModel]):
         if isinstance(event, GameEvent) and event.content.get('event') == 'FetchRemoteModule':
             # Calculate completion timestamp using the event's timestamp
             transfer_time_seconds = event.content.get('TransferTime', 0)
-            event_timestamp = datetime.fromisoformat(event.content.get('timestamp', datetime.now(timezone.utc).isoformat()).replace('Z', '+00:00'))
+            event_timestamp = datetime.fromisoformat(
+                event.content.get('timestamp', datetime.now(timezone.utc).isoformat()).replace('Z', '+00:00'))
             completion_time = event_timestamp + timedelta(seconds=transfer_time_seconds)
             now_utc = datetime.now(timezone.utc)
             is_due = completion_time <= now_utc
@@ -1441,7 +1457,8 @@ class StoredShips(Projection[StoredShipsStateModel]):
         if isinstance(event, GameEvent) and event.content.get('event') == 'ShipyardTransfer':
             # Calculate completion timestamp using the event's timestamp
             transfer_time_seconds = event.content.get('TransferTime', 0)
-            event_timestamp = datetime.fromisoformat(event.content.get('timestamp', datetime.now(timezone.utc).isoformat()).replace('Z', '+00:00'))
+            event_timestamp = datetime.fromisoformat(
+                event.content.get('timestamp', datetime.now(timezone.utc).isoformat()).replace('Z', '+00:00'))
             completion_time = event_timestamp + timedelta(seconds=transfer_time_seconds)
             now_utc = datetime.now(timezone.utc)
             is_due = completion_time <= now_utc
@@ -1495,17 +1512,17 @@ class NavInfo(Projection[NavInfoStateModel]):
             if event.content.get('Route', []):
                 self.state.NavRoute = []
                 systems_to_lookup = []
-                
+
                 # Process all systems in a single loop
                 is_first_system = True
                 for entry in event.content.get('Route', []):
                     star_system = entry.get("StarSystem", "Unknown")
                     star_class = entry.get("StarClass", "")
-                    is_scoopable = star_class in ['K','G','B','F','O','A','M']
-                    
+                    is_scoopable = star_class in ['K', 'G', 'B', 'F', 'O', 'A', 'M']
+
                     # Add all systems to the lookup list
                     systems_to_lookup.append(star_system)
-                    
+
                     # Add to projection state (skip the first one)
                     if not is_first_system:
                         self.state.NavRoute.append(NavRouteItem(
@@ -1515,7 +1532,7 @@ class NavInfo(Projection[NavInfoStateModel]):
                     else:
                         # No longer the first system after the first iteration
                         is_first_system = False
-                
+
                 # Fetch system data for systems in the route asynchronously
                 if len(systems_to_lookup) > 1:
                     systems_to_lookup.pop(0)
@@ -1524,12 +1541,12 @@ class NavInfo(Projection[NavInfoStateModel]):
         # Process NavRouteClear
         if isinstance(event, GameEvent) and event.content.get('event') == 'NavRouteClear':
             self.state.NavRoute = []
-            
+
         # Process FSDJump - remove visited systems from route
         if isinstance(event, GameEvent) and event.content.get('event') == 'FSDJump':
             for index, entry in enumerate(self.state.NavRoute):
                 if entry.StarSystem == event.content.get('StarSystem'):
-                    self.state.NavRoute = self.state.NavRoute[index+1:]
+                    self.state.NavRoute = self.state.NavRoute[index + 1:]
                     break
 
             if len(self.state.NavRoute) == 0 and self.state.NextJumpTarget is not None:
@@ -1583,14 +1600,15 @@ class BackpackStateModel(BaseModel):
     """Commander's on-foot backpack inventory."""
     Items: list[BackpackItem] = Field(default_factory=list, description="General items")
     Components: list[BackpackItem] = Field(default_factory=list, description="Crafting components")
-    Consumables: list[BackpackItem] = Field(default_factory=list, description="Consumable items (medkits, batteries, etc.)")
+    Consumables: list[BackpackItem] = Field(default_factory=list,
+                                            description="Consumable items (medkits, batteries, etc.)")
     Data: list[BackpackItem] = Field(default_factory=list, description="Data items")
 
 
 @final
 class Backpack(Projection[BackpackStateModel]):
     StateModel = BackpackStateModel
-    
+
     @override
     def process(self, event: Event) -> None:
         if isinstance(event, GameEvent):
@@ -1599,25 +1617,25 @@ class Backpack(Projection[BackpackStateModel]):
                 # Reset and update all categories with proper BackpackItem parsing
                 self.state.Items = [
                     BackpackItem(Name=i.get("Name", ""), OwnerID=i.get("OwnerID", 0),
-                                Count=i.get("Count", 0), Name_Localised=i.get("Name_Localised"))
+                                 Count=i.get("Count", 0), Name_Localised=i.get("Name_Localised"))
                     for i in event.content.get("Items", [])
                 ]
                 self.state.Components = [
                     BackpackItem(Name=i.get("Name", ""), OwnerID=i.get("OwnerID", 0),
-                                Count=i.get("Count", 0), Name_Localised=i.get("Name_Localised"))
+                                 Count=i.get("Count", 0), Name_Localised=i.get("Name_Localised"))
                     for i in event.content.get("Components", [])
                 ]
                 self.state.Consumables = [
                     BackpackItem(Name=i.get("Name", ""), OwnerID=i.get("OwnerID", 0),
-                                Count=i.get("Count", 0), Name_Localised=i.get("Name_Localised"))
+                                 Count=i.get("Count", 0), Name_Localised=i.get("Name_Localised"))
                     for i in event.content.get("Consumables", [])
                 ]
                 self.state.Data = [
                     BackpackItem(Name=i.get("Name", ""), OwnerID=i.get("OwnerID", 0),
-                                Count=i.get("Count", 0), Name_Localised=i.get("Name_Localised"))
+                                 Count=i.get("Count", 0), Name_Localised=i.get("Name_Localised"))
                     for i in event.content.get("Data", [])
                 ]
-            
+
             # Backpack additions
             elif event.content.get('event') == 'BackpackChange' and 'Added' in event.content:
                 for item in event.content.get('Added', []):
@@ -1628,7 +1646,7 @@ class Backpack(Projection[BackpackStateModel]):
                         Count=item.get('Count', 0),
                         Name_Localised=item.get('Name_Localised'),
                     )
-                    
+
                     if item_type == 'Item':
                         self._add_or_update_item("Items", new_item)
                     elif item_type == 'Component':
@@ -1637,14 +1655,14 @@ class Backpack(Projection[BackpackStateModel]):
                         self._add_or_update_item("Consumables", new_item)
                     elif item_type == 'Data':
                         self._add_or_update_item("Data", new_item)
-            
+
             # Backpack removals
             elif event.content.get('event') == 'BackpackChange' and 'Removed' in event.content:
                 for item in event.content.get('Removed', []):
                     item_type = item.get('Type', '')
                     item_name = item.get('Name', '')
                     item_count = item.get('Count', 0)
-                    
+
                     if item_type == 'Item':
                         self._remove_item("Items", item_name, item_count)
                     elif item_type == 'Component':
@@ -1653,7 +1671,7 @@ class Backpack(Projection[BackpackStateModel]):
                         self._remove_item("Consumables", item_name, item_count)
                     elif item_type == 'Data':
                         self._remove_item("Data", item_name, item_count)
-    
+
     def _add_or_update_item(self, category: str, new_item: BackpackItem) -> None:
         """Add a new item or update the count of an existing item in the specified category."""
         category_list: list[BackpackItem] = getattr(self.state, category)
@@ -1662,10 +1680,10 @@ class Backpack(Projection[BackpackStateModel]):
                 # Item exists, update count
                 item.Count += new_item.Count
                 return
-        
+
         # Item doesn't exist, add it
         category_list.append(new_item)
-    
+
     def _remove_item(self, category: str, item_name: str, count: int) -> None:
         """Remove an item or reduce its count in the specified category."""
         category_list: list[BackpackItem] = getattr(self.state, category)
@@ -1673,11 +1691,11 @@ class Backpack(Projection[BackpackStateModel]):
             if item.Name == item_name:
                 # Reduce count
                 item.Count -= count
-                
+
                 # Remove item if count is zero or less
                 if item.Count <= 0:
                     category_list.pop(i)
-                
+
                 break
 
 
@@ -1689,7 +1707,8 @@ class ExobiologyScanStateScan(BaseModel):
 
 class ExobiologyScanStateModel(BaseModel):
     """Current exobiology scanning state."""
-    within_scan_radius: Optional[bool] = Field(default=True, description="Whether commander is within minimum sample distance")
+    within_scan_radius: Optional[bool] = Field(default=True,
+                                               description="Whether commander is within minimum sample distance")
     scan_radius: Optional[int] = Field(default=None, description="Required distance between samples in meters")
     scans: list[ExobiologyScanStateScan] = Field(default_factory=list, description="Locations of completed scans")
     lat: Optional[float] = Field(default=None, description="Commander's current latitude")
@@ -1702,27 +1721,27 @@ class ExobiologyScan(Projection[ExobiologyScanStateModel]):
     StateModel = ExobiologyScanStateModel
 
     colony_size = {
-        "Aleoids_Genus_Name": 150,      # Aleoida
-        "Vents_Genus_Name": 100,        # Amphora Plant
-        "Sphere_Genus_Name": 100,       # Anemone
-        "Bacterial_Genus_Name": 500,    # Bacterium
-        "Cone_Genus_Name": 100,         # Bark Mound
-        "Brancae_Name": 100,            # Brain Tree
-        "Cactoid_Genus_Name": 300,      # Cactoida
-        "Clypeus_Genus_Name": 150,      # Clypeus
-        "Conchas_Genus_Name": 150,      # Concha
-        "Shards_Genus_Name": 100,       # Crystalline Shard
+        "Aleoids_Genus_Name": 150,  # Aleoida
+        "Vents_Genus_Name": 100,  # Amphora Plant
+        "Sphere_Genus_Name": 100,  # Anemone
+        "Bacterial_Genus_Name": 500,  # Bacterium
+        "Cone_Genus_Name": 100,  # Bark Mound
+        "Brancae_Name": 100,  # Brain Tree
+        "Cactoid_Genus_Name": 300,  # Cactoida
+        "Clypeus_Genus_Name": 150,  # Clypeus
+        "Conchas_Genus_Name": 150,  # Concha
+        "Shards_Genus_Name": 100,  # Crystalline Shard
         "Electricae_Genus_Name": 1000,  # Electricae
-        "Fonticulus_Genus_Name": 500,   # Fonticulua
-        "Shrubs_Genus_Name": 150,       # Frutexa
-        "Fumerolas_Genus_Name": 100,    # Fumerola
-        "Fungoids_Genus_Name": 300,     # Fungoida
-        "Osseus_Genus_Name": 800,       # Osseus
-        "Recepta_Genus_Name": 150,      # Recepta
-        "Tube_Genus_Name": 100,         # Sinuous Tuber
-        "Stratum_Genus_Name": 500,      # Stratum
-        "Tubus_Genus_Name": 800,        # Tubus
-        "Tussocks_Genus_Name": 200      # Tussock
+        "Fonticulus_Genus_Name": 500,  # Fonticulua
+        "Shrubs_Genus_Name": 150,  # Frutexa
+        "Fumerolas_Genus_Name": 100,  # Fumerola
+        "Fungoids_Genus_Name": 300,  # Fungoida
+        "Osseus_Genus_Name": 800,  # Osseus
+        "Recepta_Genus_Name": 150,  # Recepta
+        "Tube_Genus_Name": 100,  # Sinuous Tuber
+        "Stratum_Genus_Name": 500,  # Stratum
+        "Tubus_Genus_Name": 800,  # Tubus
+        "Tussocks_Genus_Name": 200  # Tussock
     }
 
     def haversine_distance(self, new_value: ExobiologyScanStateScan, old_value: ExobiologyScanStateScan, radius: int):
@@ -1750,7 +1769,7 @@ class ExobiologyScan(Projection[ExobiologyScanStateModel]):
             if self.state.scans and self.state.scan_radius:
                 in_scan_radius = False
                 if (self.state.lat != 0 and self.state.long != 0 and
-                    event.status.get('PlanetRadius', False)):
+                        event.status.get('PlanetRadius', False)):
                     distance_obj = ExobiologyScanStateScan(lat=self.state.lat, long=self.state.long)
                     for scan in self.state.scans:
                         distance = self.haversine_distance(scan, distance_obj, event.status['PlanetRadius'])
@@ -1773,7 +1792,6 @@ class ExobiologyScan(Projection[ExobiologyScanStateModel]):
                         self.state.scans.clear()
                         self.state.scan_radius = None
 
-
         if isinstance(event, GameEvent) and event.content.get('event') == 'ScanOrganic':
             content = event.content
             if content["ScanType"] == "Log":
@@ -1788,7 +1806,8 @@ class ExobiologyScan(Projection[ExobiologyScanStateModel]):
                     life_form = f"{species}"
                 self.state.life_form = life_form
                 self.state.within_scan_radius = True
-                projected_events.append(ProjectedEvent(content={**content, "event": "ScanOrganicFirst", "NewSampleDistance":self.state.scan_radius}))
+                projected_events.append(ProjectedEvent(
+                    content={**content, "event": "ScanOrganicFirst", "NewSampleDistance": self.state.scan_radius}))
 
             elif content["ScanType"] == "Sample":
                 if len(self.state.scans) == 1:
@@ -1806,7 +1825,8 @@ class ExobiologyScan(Projection[ExobiologyScanStateModel]):
             elif content["ScanType"] == "Analyse":
                 pass
 
-        if isinstance(event, GameEvent) and event.content.get('event') in ['SupercruiseEntry','FSDJump','Died','Shutdown','JoinACrew']:
+        if isinstance(event, GameEvent) and event.content.get('event') in ['SupercruiseEntry', 'FSDJump', 'Died',
+                                                                           'Shutdown', 'JoinACrew']:
             self.state.scans.clear()
             self.state.scan_radius = None
 
@@ -1837,7 +1857,7 @@ class SuitLoadoutStateModel(BaseModel):
 @final
 class SuitLoadout(Projection[SuitLoadoutStateModel]):
     StateModel = SuitLoadoutStateModel
-    
+
     @override
     def process(self, event: Event) -> None:
         if isinstance(event, GameEvent) and event.content.get('event') == 'SuitLoadout':
@@ -1848,7 +1868,7 @@ class SuitLoadout(Projection[SuitLoadoutStateModel]):
             self.state.SuitMods = event.content.get('SuitMods', [])
             self.state.LoadoutID = event.content.get('LoadoutID', 0)
             self.state.LoadoutName = event.content.get('LoadoutName', 'Unknown')
-            
+
             # Process weapon modules with proper SuitWeaponModule instantiation
             self.state.Modules = [
                 SuitWeaponModule(
@@ -2075,9 +2095,15 @@ MATERIAL_NAME_LOOKUP: dict[str, MaterialsCategory] = {
 
 class MaterialsStateModel(BaseModel):
     """Commander's materials inventory for engineering and synthesis."""
-    Raw: list[MaterialEntry] = Field(default_factory=lambda: [MaterialEntry(**entry) for entry in MATERIAL_TEMPLATE["Raw"]], description="Raw materials from mining and surface prospecting")
-    Manufactured: list[MaterialEntry] = Field(default_factory=lambda: [MaterialEntry(**entry) for entry in MATERIAL_TEMPLATE["Manufactured"]], description="Manufactured materials from salvage and combat")
-    Encoded: list[MaterialEntry] = Field(default_factory=lambda: [MaterialEntry(**entry) for entry in MATERIAL_TEMPLATE["Encoded"]], description="Encoded data from scanning")
+    Raw: list[MaterialEntry] = Field(
+        default_factory=lambda: [MaterialEntry(**entry) for entry in MATERIAL_TEMPLATE["Raw"]],
+        description="Raw materials from mining and surface prospecting")
+    Manufactured: list[MaterialEntry] = Field(
+        default_factory=lambda: [MaterialEntry(**entry) for entry in MATERIAL_TEMPLATE["Manufactured"]],
+        description="Manufactured materials from salvage and combat")
+    Encoded: list[MaterialEntry] = Field(
+        default_factory=lambda: [MaterialEntry(**entry) for entry in MATERIAL_TEMPLATE["Encoded"]],
+        description="Encoded data from scanning")
     LastUpdated: str = Field(default="", description="Timestamp of last materials update")
 
 
@@ -2164,19 +2190,22 @@ class Materials(Projection[MaterialsStateModel]):
             if isinstance(paid, dict):
                 quantity = paid.get('Quantity', 0)
                 if isinstance(quantity, int):
-                    update_material(paid.get('Material'), -quantity, paid.get('Category'), paid.get('Material_Localised'))
+                    update_material(paid.get('Material'), -quantity, paid.get('Category'),
+                                    paid.get('Material_Localised'))
             received = content.get('Received')
             if isinstance(received, dict):
                 quantity = received.get('Quantity', 0)
                 if isinstance(quantity, int):
-                    update_material(received.get('Material'), quantity, received.get('Category'), received.get('Material_Localised'))
+                    update_material(received.get('Material'), quantity, received.get('Category'),
+                                    received.get('Material_Localised'))
             update_timestamp()
             return
 
         if event_name == 'MaterialCollected':
             count_value = content.get('Count', 0)
             if isinstance(count_value, int):
-                update_material(content.get('Name'), count_value, content.get('Category'), content.get('Name_Localised'))
+                update_material(content.get('Name'), count_value, content.get('Category'),
+                                content.get('Name_Localised'))
                 update_timestamp()
             return
 
@@ -2187,7 +2216,8 @@ class Materials(Projection[MaterialsStateModel]):
                     if isinstance(material, dict):
                         count_value = material.get('Count', 0)
                         if isinstance(count_value, int):
-                            update_material(material.get('Name'), -count_value, material.get('Category'), material.get('Name_Localised'))
+                            update_material(material.get('Name'), -count_value, material.get('Category'),
+                                            material.get('Name_Localised'))
             update_timestamp()
             return
 
@@ -2198,7 +2228,8 @@ class Materials(Projection[MaterialsStateModel]):
                     if isinstance(ingredient, dict):
                         count_value = ingredient.get('Count', 0)
                         if isinstance(count_value, int):
-                            update_material(ingredient.get('Name'), -count_value, None, ingredient.get('Name_Localised'))
+                            update_material(ingredient.get('Name'), -count_value, None,
+                                            ingredient.get('Name_Localised'))
             update_timestamp()
             return
 
@@ -2227,7 +2258,8 @@ class ColonisationConstructionStateModel(BaseModel):
     ConstructionProgress: float = Field(default=0.0, description="Construction completion percentage")
     ConstructionComplete: bool = Field(default=False, description="Whether construction is complete")
     ConstructionFailed: bool = Field(default=False, description="Whether construction has failed")
-    ResourcesRequired: list[ColonisationResourceItem] = Field(default_factory=list, description="Resources needed for construction")
+    ResourcesRequired: list[ColonisationResourceItem] = Field(default_factory=list,
+                                                              description="Resources needed for construction")
     MarketID: int = Field(default=0, description="Market identifier for the construction depot")
     StarSystem: str = Field(default="Unknown", description="Star system of the construction")
     StarSystemRecall: str = Field(default="Unknown", description="Last known star system")
@@ -2288,7 +2320,8 @@ class DockingEventsStateModel(BaseModel):
     """Current docking status and events."""
     StationType: str = Field(default='Unknown', description="Type of station (Coriolis/Orbis/Ocellus/Outpost/etc.)")
     LastEventType: str = Field(default='Unknown', description="Last docking-related event type")
-    DockingComputerState: str = Field(default='deactivated', description="Docking computer state: deactivated/activated/auto-docking")
+    DockingComputerState: str = Field(default='deactivated',
+                                      description="Docking computer state: deactivated/activated/auto-docking")
     Timestamp: str = Field(default="1970-01-01T00:00:00Z", description="Timestamp of last docking event")
 
 
@@ -2299,8 +2332,10 @@ class DockingEvents(Projection[DockingEventsStateModel]):
     @override
     def process(self, event: Event) -> list[ProjectedEvent] | None:
         projected_events: list[ProjectedEvent] = []
-        
-        if isinstance(event, GameEvent) and event.content.get('event') in ['Docked', 'Undocked', 'DockingGranted', 'DockingRequested', 'DockingCanceled', 'DockingDenied', 'DockingTimeout']:
+
+        if isinstance(event, GameEvent) and event.content.get('event') in ['Docked', 'Undocked', 'DockingGranted',
+                                                                           'DockingRequested', 'DockingCanceled',
+                                                                           'DockingDenied', 'DockingTimeout']:
             self.state.DockingComputerState = "deactivated"
             self.state.StationType = event.content.get("StationType", "Unknown")
             self.state.LastEventType = event.content.get("event", "Unknown")
@@ -2314,7 +2349,8 @@ class DockingEvents(Projection[DockingEventsStateModel]):
                     self.state.DockingComputerState = "auto-docking"
                     projected_events.append(ProjectedEvent(content={"event": "DockingComputerDocking"}))
 
-                elif self.state.LastEventType == "Undocked" and self.state.StationType in ['Coriolis', 'Orbis', 'Ocellus']:
+                elif self.state.LastEventType == "Undocked" and self.state.StationType in ['Coriolis', 'Orbis',
+                                                                                           'Ocellus']:
                     self.state.DockingComputerState = "auto-docking"
                     projected_events.append(ProjectedEvent(content={"event": "DockingComputerUndocking"}))
 
@@ -2323,6 +2359,7 @@ class DockingEvents(Projection[DockingEventsStateModel]):
                 projected_events.append(ProjectedEvent(content={"event": "DockingComputerDeactivated"}))
 
         return projected_events
+
 
 # Define types for Powerplay Projection
 class PowerplayStateModel(BaseModel):
@@ -2379,6 +2416,7 @@ class Powerplay(Projection[PowerplayStateModel]):
 
             if event_name == 'PowerplayLeave':
                 self.state = PowerplayStateModel()
+
 
 # Define types for Rank/Progress Projection
 class RankProgressEntry(BaseModel):
@@ -2588,6 +2626,7 @@ class RankProgress(Projection[RankProgressStateModel]):
             if 'timestamp' in event.content:
                 self.state.Timestamp = event.content['timestamp']
 
+
 # Define types for Squadron Projection
 class SquadronStateModel(BaseModel):
     """Current squadron membership state."""
@@ -2664,6 +2703,7 @@ class Squadron(Projection[SquadronStateModel]):
         if event_name in ['LeftSquadron', 'KickedFromSquadron', 'DisbandedSquadron']:
             self.state = SquadronStateModel()
 
+
 # Define types for Reputation Projection
 class ReputationStateModel(BaseModel):
     """Faction reputation values."""
@@ -2687,6 +2727,7 @@ class Reputation(Projection[ReputationStateModel]):
             if 'timestamp' in event.content:
                 self.state.Timestamp = event.content['timestamp']
 
+
 # Define types for Commander Projection
 class CommanderStateModel(BaseModel):
     """Commander identity details."""
@@ -2706,6 +2747,7 @@ class Commander(Projection[CommanderStateModel]):
             self.state.Name = event.content.get('Name', 'Unknown')
             if 'timestamp' in event.content:
                 self.state.Timestamp = event.content['timestamp']
+
 
 # Define types for Statistics Projection
 class StatisticsStateModel(BaseModel):
@@ -2729,6 +2771,7 @@ class Statistics(Projection[StatisticsStateModel]):
             if 'timestamp' in event.content:
                 self.state.Timestamp = event.content['timestamp']
 
+
 # Define types for FleetCarriers Projection
 class FleetCarrierEntry(BaseModel):
     """Fleet carrier details and last known location."""
@@ -2747,7 +2790,8 @@ class FleetCarrierEntry(BaseModel):
     Crew: list[dict[str, Any]] = Field(default_factory=list, description="Carrier crew data")
     ShipPacks: list[dict[str, Any]] = Field(default_factory=list, description="Carrier ship packs")
     ModulePacks: list[dict[str, Any]] = Field(default_factory=list, description="Carrier module packs")
-    TradeOrders: dict[str, dict[str, Any]] = Field(default_factory=dict, description="Carrier trade orders keyed by commodity")
+    TradeOrders: dict[str, dict[str, Any]] = Field(default_factory=dict,
+                                                   description="Carrier trade orders keyed by commodity")
     StarSystem: str = Field(default="Unknown", description="Last known star system")
     SystemAddress: int = Field(default=0, description="Last known system address")
     BodyID: int = Field(default=0, description="Last known body ID")
@@ -2777,8 +2821,10 @@ class CarrierCooldownItem(BaseModel):
 class FleetCarriersStateModel(BaseModel):
     """Fleet carriers keyed by carrier ID."""
     Carriers: dict[int, FleetCarrierEntry] = Field(default_factory=dict, description="Carriers keyed by CarrierID")
-    PendingJumps: dict[int, CarrierJumpRequestItem] = Field(default_factory=dict, description="Pending carrier jumps keyed by CarrierID")
-    Cooldowns: dict[int, CarrierCooldownItem] = Field(default_factory=dict, description="Carrier cooldowns keyed by CarrierID")
+    PendingJumps: dict[int, CarrierJumpRequestItem] = Field(default_factory=dict,
+                                                            description="Pending carrier jumps keyed by CarrierID")
+    Cooldowns: dict[int, CarrierCooldownItem] = Field(default_factory=dict,
+                                                      description="Carrier cooldowns keyed by CarrierID")
 
 
 @final
@@ -3017,6 +3063,7 @@ class FleetCarriers(Projection[FleetCarriersStateModel]):
         current_time = datetime.now(timezone.utc)
         return self._process_jump_timers(current_time)
 
+
 # Define types for InCombat Projection
 class InCombatStateModel(BaseModel):
     """Combat status of the commander."""
@@ -3074,14 +3121,15 @@ class Wing(Projection[WingStateModel]):
                 self.state.Members = [member.get('Name', 'Unknown') for member in others]  # type: ignore
             else:
                 self.state.Members = []
-        
+
         if isinstance(event, GameEvent) and event.content.get('event') == 'WingAdd':
             name = event.content.get('Name', 'Unknown')
             if name and name not in self.state.Members:
                 self.state.Members.append(name)
-        
+
         if isinstance(event, GameEvent) and event.content.get('event') in ['WingLeave', 'LoadGame']:
             self.state.Members = []
+
 
 class FSSSignalsStateModel(BaseModel):
     """Current FSS signal discoveries in the system."""
@@ -3128,18 +3176,165 @@ class FSSSignals(Projection[FSSSignalsStateModel]):
                     self.state.UnknownSignal.append(signal_name)
                     signal_type = "UnknownSignal"
 
-            projected_events.append(ProjectedEvent(content={"event": f"{signal_type}Discovered", "SignalName": signal_name}))
+            projected_events.append(
+                ProjectedEvent(content={"event": f"{signal_type}Discovered", "SignalName": signal_name}))
 
-        if isinstance(event, GameEvent) and event.content.get('event') in ['FSDJump', 'SupercruiseExit', 'FSSDiscoveryScan']:
+        if isinstance(event, GameEvent) and event.content.get('event') in ['FSDJump', 'SupercruiseExit',
+                                                                           'FSSDiscoveryScan']:
             # These indicate that no more signals are discovered immediately, so we could batch on those
             pass
 
         return projected_events
 
+
+class StationTargetModel(BaseModel):
+    """Metadata about the current station/settlement we are approaching."""
+    name: Optional[str] = None
+    timestamp: Optional[str] = None
+    market_id: Optional[int] = None
+    body_type: Optional[str] = None
+    drop_type: Optional[str] = None
+    taxi: Optional[bool] = None
+
+
+class InDockingRangeStateModel(BaseModel):
+    LastStationTarget: Optional[StationTargetModel] = None
+    LastSupercruiseExit: Optional[str] = None
+    HasExitedForDock: bool = False
+    IsDocked: bool = False
+
+
+@final
+class InDockingRange(Projection[InDockingRangeStateModel]):
+    StateModel = InDockingRangeStateModel
+
+    def _is_station_like(self, name: str = "", body_type: str = "", drop_type: str = "") -> bool:
+        text = f"{name} {body_type} {drop_type}".lower()
+        station_keywords = ["station", "starport", "outpost", "port", "mega ship", "megaship", "settlement", "carrier",
+                            "construction site"]
+        return any(keyword in text for keyword in station_keywords)
+
+    @override
+    def process(self, event: Event) -> list[ProjectedEvent]:
+        projected_events: list[ProjectedEvent] = []
+
+        if isinstance(event, GameEvent):
+            name = event.content.get("event")
+
+            if name == "Docked":
+                # Hard stop: once docked, clear pending docking prompts.
+                self.state.LastStationTarget = None
+                self.state.LastSupercruiseExit = None
+                self.state.IsDocked = True
+                return projected_events
+
+            if name == "Undocked":
+                if getattr(event, "historic", False):
+                    return projected_events
+                self.state.LastStationTarget = None
+                self.state.IsDocked = False
+                return projected_events
+
+            if name == "DockingRequested":
+                # Manual docking request; clear any pending prompt context to avoid duplicate reminders.
+                self.state.LastStationTarget = None
+                self.state.LastSupercruiseExit = None
+                return projected_events
+
+            if name in ["DockingGranted", "DockingDenied", "DockingCancelled", "DockingCanceled", "DockingTimeout"]:
+                # Docking flow completed/failed; clear context to avoid stale prompts.
+                self.state.LastStationTarget = None
+                self.state.LastSupercruiseExit = None
+                return projected_events
+
+            if name == "SupercruiseExit":
+                body_type = event.content.get("BodyType", "") or ""
+                body_name = event.content.get("Body", "") or ""
+                taxi = event.content.get("Taxi", "") or False
+                ts = event.content.get("timestamp") or event.timestamp
+                self.state.LastSupercruiseExit = ts
+                self.state.HasExitedForDock = True
+
+                if taxi:
+                    # Ignore taxi rides for docking prompts; clear approach context.
+                    self.state.LastStationTarget = None
+                    self.state.LastSupercruiseExit = None
+                    self.state.HasExitedForDock = False
+                    return projected_events
+
+                # Merge with any existing station context (e.g., from ApproachSettlement) to keep richer metadata.
+                existing_target = self.state.LastStationTarget
+                if existing_target:
+                    merged_target = StationTargetModel(
+                        **{
+                            **existing_target.model_dump(),
+                            "name": existing_target.name or body_name,
+                            "timestamp": ts,
+                            "body_type": existing_target.body_type or body_type,
+                            "taxi": False,
+                        }
+                    )
+                    self.state.LastStationTarget = merged_target
+                elif self._is_station_like(body_name, body_type, ""):
+                    self.state.LastStationTarget = StationTargetModel(
+                        name=body_name,
+                        timestamp=ts,
+                        body_type=body_type,
+                        taxi=False,
+                    )
+                else:
+                    self.state.LastStationTarget = None
+                self.state.LastSupercruiseExit = ts
+
+            if name == "ApproachSettlement":
+
+                body_type = event.content.get("BodyType", "") or event.content.get("StationType", "") or ""
+                body_name = event.content.get("BodyName", "") or event.content.get("Body", "") or ""
+                target_name = event.content.get("Name") or body_name
+                market_id = event.content.get("MarketID")
+                services = [s.lower() for s in event.content.get("StationServices", [])]
+                dockable = any(s in ["dock", "autodock"] for s in services)
+                ts = event.content.get("timestamp") or event.timestamp
+                self.state.LastSupercruiseExit = ts
+
+                if dockable:
+                    self.state.LastStationTarget = StationTargetModel(
+                        name=target_name,
+                        timestamp=ts,
+                        market_id=market_id,
+                        body_type=body_type,
+                        drop_type="",
+                    )
+                else:
+                    self.state.LastStationTarget = None
+
+            if name == "ReceiveText":
+                channel = event.content.get("Channel", "")
+                if channel not in ["npc", "station", "local", "starsystem"]:
+                    return projected_events
+
+                # Only respond to NFZ if we have an active station approach context
+                if not self.state.HasExitedForDock:
+                    return projected_events
+
+                message = (event.content.get("Message") or "").lower()
+                if "nofirezone_entered" not in message:
+                    return projected_events
+
+                # We have already prompted based on NFZ warning; clear target so we don't prompt again on mass lock
+                self.state.LastStationTarget = None
+                self.state.LastSupercruiseExit = None
+                projected_events.append(ProjectedEvent(content={"event": "InDockingRange"}))
+                self.state.HasExitedForDock = False
+
+        return projected_events
+
+
 class IdleStateModel(BaseModel):
     """Commander's activity/idle status."""
     LastInteraction: str = Field(default="1970-01-01T00:00:00Z", description="Timestamp of last user interaction")
     IsIdle: bool = Field(default=True, description="Whether the user is currently idle")
+
 
 @final
 class Idle(Projection[IdleStateModel]):
@@ -3183,10 +3378,11 @@ class Idle(Projection[IdleStateModel]):
         current_dt = datetime.now(timezone.utc)
         return self._check_idle_timeout(current_dt)
 
+
 def registerProjections(
-    event_manager: EventManager,
-    system_db: SystemDatabase,
-    idle_timeout: int,
+        event_manager: EventManager,
+        system_db: SystemDatabase,
+        idle_timeout: int,
 ):
     event_manager.register_projection(EventCounter())
     event_manager.register_projection(CurrentStatus())
@@ -3215,6 +3411,7 @@ def registerProjections(
     event_manager.register_projection(InCombat())
     event_manager.register_projection(Wing())
     event_manager.register_projection(FSSSignals())
+    event_manager.register_projection(InDockingRange())
     event_manager.register_projection(Idle(idle_timeout))
     event_manager.register_projection(StoredModules())
     event_manager.register_projection(StoredShips())
